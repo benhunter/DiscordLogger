@@ -30,6 +30,7 @@ def timeit_wrapper(func):
 
 @timeit_wrapper
 def main():
+    # Load the webhook URL.
     with open("config.json", "r") as file:
         config = json.load(file)
     print(config)
@@ -43,22 +44,22 @@ def main():
     discord_handler = discordlogging.DiscordHandler(config["webhook"],
                                                     "Test DiscordHandler")
     discord_handler.setLevel(logging.DEBUG)
-    discord_handler.setFormatter(FORMAT)
+    # discord_handler.setFormatter(FORMAT)
 
     logger = logging.getLogger("Python to Discord Logger")
     logger.setLevel(logging.DEBUG)
     logger.addHandler(stream_handler)
     logger.addHandler(discord_handler)
 
-    # Test rate limiting
-    for count in range(100):
-        # logger.debug(f"debug test {count}")
-        logger.info(f"info test {count}")
+    # Test rate limiting.
+    # for count in range(100):
+    #     # logger.debug(f"debug test {count}")
+    #     logger.info(f"info test {count}")
         # logger.warning(f"warning test {count}")
         # logger.error(f"error test {count}")
         # logger.critical(f"critical test {count}")
 
-    # Test message longer than Discord limit
+    # Test message longer than Discord limit.
     long_msg = ' '.join([str(x) for x in range(1000)])
     logger.info(f"{len(long_msg)}, {long_msg}")
 

@@ -1,6 +1,7 @@
 import logging
 import json
 import time
+import copy
 
 
 try:
@@ -29,6 +30,7 @@ class DiscordHandler(logging.Handler):
         self._agent = agent
         self._header = self.create_header()
         self._name = ""
+        self.formatter = SimpleDiscordFormatter("%(asctime)s:%(name)s:%(levelname)s:%(message)s")
 
     def create_header(self):
         return {
@@ -37,13 +39,11 @@ class DiscordHandler(logging.Handler):
         }
 
     def _write_to_discord(self, message):
-        content = json.dumps({"content": message})
-
         max_retries = 5
-        for retries in range(max_retries):
+        for retry in range(max_retries):
             request = requests.post(self._url,
                                     headers=self._header,
-                                    data=content)
+                                    json=message)
             if request.status_code == 404:
                 raise requests.exceptions.InvalidURL(
                     "This URL seems wrong... Response = %s" % request.text)
@@ -53,20 +53,24 @@ class DiscordHandler(logging.Handler):
                 time.sleep(retry_after)
                 continue
             elif request.status_code >= 400:
-                # request was unsuccessful
+                # request unsuccessful
                 raise requests.exceptions.HTTPError(
                     f"Request not successful... HTTP Response Code = "
                     f"{request.status_code}, Message = {request.text}")
             elif request.status_code < 400:
-                # request was successful
+                # request successful
                 break
 
     def emit(self, record):
         try:
-            msg = self.format(record)
             # Discord limits messages to 2000 characters
-            for short_msg in self._chunks(msg, 1950):
-                self._write_to_discord(f"```{short_msg}```")
+            # Also need padding for JSON formatting
+            # TODO test padding length with embed style
+            for short_msg in self._chunks(record.getMessage(), 1900):  # 1940 without embed
+                chunked_record = copy.copy(record)
+                chunked_record.msg = short_msg
+                json_record = self.format(chunked_record)
+                self._write_to_discord(json_record)
         except Exception:  # necessary for handling exceptions called while logging
             self.handleError(record)
 
@@ -78,3 +82,44 @@ class DiscordHandler(logging.Handler):
         '''
         for i in range(0, len(seq), length):
             yield seq[i:i + length]
+
+        
+class SimpleDiscordFormatter(logging.Formatter):
+    """Basic formatter without styling"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+    def format(self, record):
+        # return {'content': record.getMessage()}
+        return {'content': super().format(record)}
+
+
+class DiscordFormatter(logging.Formatter):
+    def format(self, record):
+        """
+        Format message content, timestamp when it was logged and a
+        coloured border depending on the severity of the message
+        """
+        msg = record.getMessage()
+        exc = record.__dict__['exc_info']
+        if exc:
+            msg = msg + '\n```{}```'.format(traceback.format_exc())
+        embed = dict()
+        embed["description"] = msg
+        embed['timestamp'] = datetime.utcnow().isoformat()
+        embed['author'] = {'name': '{}@{}'.format(
+            record.name, record.filename)}
+        try:
+            colors = {
+                'DEBUG': 810979,
+                'INFO': 1756445,
+                'WARNING': 15633170,
+                'ERROR': 16731648,
+                'CRITICAL': 16711680,
+            }
+            embed['color'] = colors[record.levelname]
+        except KeyError:
+            pass
+        return {'embeds': [embed]}
